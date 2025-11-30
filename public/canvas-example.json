@@ -1,0 +1,56 @@
+{
+  "version": "1.0",
+  "timestamp": "2025-11-27T00:00:00.000Z",
+  "background": "bathroom",
+  "canvasSize": {
+    "width": 1200,
+    "height": 800
+  },
+  "devices": [
+    {
+      "instanceId": "device-1732694400000-abc123",
+      "deviceId": "sink-1",
+      "name": "水池1",
+      "icon": "🚰",
+      "position": {
+        "x": 100,
+        "y": 150
+      },
+      "size": {
+        "width": 80,
+        "height": 60
+      },
+      "scale": 1
+    },
+    {
+      "instanceId": "device-1732694410000-def456",
+      "deviceId": "shower-1",
+      "name": "淋浴间",
+      "icon": "🚿",
+      "position": {
+        "x": 300,
+        "y": 200
+      },
+      "size": {
+        "width": 90,
+        "height": 90
+      },
+      "scale": 1
+    },
+    {
+      "instanceId": "device-1732694420000-ghi789",
+      "deviceId": "bathtub",
+      "name": "自由水池",
+      "icon": "🛀",
+      "position": {
+        "x": 500,
+        "y": 180
+      },
+      "size": {
+        "width": 120,
+        "height": 70
+      },
+      "scale": 1.2
+    }
+  ]
+}
