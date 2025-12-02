@@ -10,7 +10,7 @@
       <el-select
         v-model="selectedBackground"
         placeholder="选择画布背景"
-        style="width: 200px; margin-left: 20px"
+        style="width: 200px; margin-left: 20px" v-if="false"
       >
         <el-option
           v-for="bg in canvasBackgrounds"
@@ -108,40 +108,128 @@
             <div class="preview-icon">{{ dragPreview.icon }}</div>
           </div>
 
-          <!-- 画布上的设备 -->
-          <template v-for="device in canvasDevices" :key="device.instanceId">
+          <!-- 画布上的房间和设备 -->
+          <template v-for="room in rooms" :key="room.instanceId">
             <div
-              class="canvas-device"
+              class="room-device"
               :class="{
-                selected: selectedDeviceId === device.instanceId,
+                selected: selectedDeviceId === room.instanceId,
                 'view-mode': mode === 'view',
               }"
               :style="{
-                left: device.x + 'px',
-                top: device.y + 'px',
-                width: device.width + 'px',
-                height: device.height + 'px',
-                transform: `scale(${device.scale || 1})`,
+                left: room.x + 'px',
+                top: room.y + 'px',
+                width: room.width + 'px',
+                height: room.height + 'px',
               }"
-              @click.stop="handleDeviceClick(device)"
+              @click.stop="handleDeviceClick(room)"
               @mousedown="
-                mode === 'edit' ? handleDeviceMouseDown($event, device) : null
+                mode === 'edit' ? handleDeviceMouseDown($event, room) : null
               "
+              @dragover="handleRoomDragOver($event, room)"
+              @drop="handleRoomDrop($event, room)"
             >
-              <div class="device-content">
-                <el-tooltip class="box-item" :content="device.name">
+              <div class="room-content">
+                <div 
+                  class="room-header" 
+                  @dblclick.stop="mode === 'edit' ? startEditRoomName(room) : null"
+                >
+                  <template v-if="editingRoomId === room.instanceId">
+                    <el-input
+                      ref="roomNameInput"
+                      v-model="editingRoomName"
+                      size="small"
+                      @blur="finishEditRoomName(room)"
+                      @keyup.enter="finishEditRoomName(room)"
+                      @keyup.esc="cancelEditRoomName"
+                      style="width: 100%;"
+                    />
+                  </template>
+                  <template v-else>
+                    {{ room.name }}
+                  </template>
+                </div>
+                <div class="room-body">
+                  <!-- 房间内的设备 -->
                   <div
-                    class="device-icon" 
-                    :style="{ transform: 'scale(' + device.width / 80 + ')' }"
+                    v-for="device in getRoomDevices(room.instanceId)"
+                    :key="device.instanceId"
+                    class="inner-device"
+                    :class="{
+                      selected: selectedDeviceId === device.instanceId,
+                      'view-mode': mode === 'view',
+                    }"
+                    :style="{
+                      left: device.x + 'px',
+                      top: device.y + 'px',
+                      width: device.width + 'px',
+                      height: device.height + 'px',
+                    }"
+                    @click.stop="handleDeviceClick(device)"
+                    @mousedown.stop="mode === 'edit' ? handleInnerDeviceMouseDown($event, device, room) : null"
                   >
-                    {{ device.icon }}
+                    <div class="device-content">
+                      <el-tooltip class="box-item" :content="device.name">
+                        <div class="device-icon" :style="{transform: `scale(${device.width / 42})`}">{{ device.icon }}</div>
+                      </el-tooltip>
+                    </div>
+
+                    <!-- 选中边框和操作按钮 -->
+                    <template
+                      v-if="selectedDeviceId === device.instanceId && mode === 'edit'"
+                    >
+                      <div class="selection-border"></div>
+
+                      <div class="action-trigger device-action">
+                        <el-popover placement="right" :width="200" trigger="click">
+                          <template #reference>
+                            <el-icon><MoreFilled /></el-icon>
+                          </template>
+                          <div class="action-menu">
+                            <div
+                              class="menu-item"
+                              @click.stop="handleSetRule(device)"
+                            >
+                              <el-icon><Setting /></el-icon>
+                              <span>设置规则</span>
+                            </div>
+                            <div
+                              class="menu-item"
+                              @click.stop="handleSetParams(device)"
+                            >
+                              <el-icon><Document /></el-icon>
+                              <span>设备参数</span>
+                            </div>
+                            <div class="menu-item" @click.stop="handleRepair(device)">
+                              <el-icon><Tools /></el-icon>
+                              <span>报修处理</span>
+                            </div>
+                            <div
+                              class="menu-item danger"
+                              @click.stop="handleDelete(device)"
+                            >
+                              <el-icon><Delete /></el-icon>
+                              <span>删除</span>
+                            </div>
+                          </div>
+                        </el-popover>
+                      </div>
+
+                      <!-- 缩放手柄 -->
+                      <div class="resize-handles">
+                        <div
+                          class="resize-handle bottom-right"
+                          @mousedown.stop="handleInnerDeviceResizeStart($event, device, room)"
+                        ></div>
+                      </div>
+                    </template>
                   </div>
-                </el-tooltip>
+                </div>
               </div>
 
               <!-- 选中边框和操作按钮 -->
               <template
-                v-if="selectedDeviceId === device.instanceId && mode === 'edit'"
+                v-if="selectedDeviceId === room.instanceId && mode === 'edit'"
               >
                 <div class="selection-border"></div>
 
@@ -151,27 +239,13 @@
                       <el-icon><MoreFilled /></el-icon>
                     </template>
                     <div class="action-menu">
-                      <div
-                        class="menu-item"
-                        @click.stop="handleSetRule(device)"
-                      >
+                      <div class="menu-item" @click.stop="handleSetRule(room)">
                         <el-icon><Setting /></el-icon>
                         <span>设置规则</span>
                       </div>
                       <div
-                        class="menu-item"
-                        @click.stop="handleSetParams(device)"
-                      >
-                        <el-icon><Document /></el-icon>
-                        <span>设备参数</span>
-                      </div>
-                      <div class="menu-item" @click.stop="handleRepair(device)">
-                        <el-icon><Tools /></el-icon>
-                        <span>报修处理</span>
-                      </div>
-                      <div
                         class="menu-item danger"
-                        @click.stop="handleDelete(device)"
+                        @click.stop="handleDeleteRoom(room)"
                       >
                         <el-icon><Delete /></el-icon>
                         <span>删除</span>
@@ -184,7 +258,7 @@
                 <div class="resize-handles">
                   <div
                     class="resize-handle bottom-right"
-                    @mousedown.stop="handleResizeStart($event, device)"
+                    @mousedown.stop="handleResizeStart($event, room)"
                   ></div>
                 </div>
               </template>
@@ -238,7 +312,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed } from "vue";
+import { ref, reactive, computed, nextTick } from "vue";
 import {
   Search,
   Delete,
@@ -262,16 +336,20 @@ const canvasBackgrounds = [
 // 状态管理
 const mode = ref("edit"); // edit | view
 const searchText = ref("");
-const activeCategories = ref(["kitchen"]);
+const activeCategories = ref(["kitchen",'layout']);
 const selectedBackground = ref("grid");
 const canvasRef = ref(null);
-const canvasDevices = ref([]);
+const roomNameInput = ref(null);
+const rooms = ref([]);
+const devices = ref([]);
 const selectedDeviceId = ref(null);
 const showActionMenu = ref(false);
 const dialogVisible = ref(false);
 const dialogTitle = ref("");
 const dialogType = ref("");
 const currentDevice = ref({});
+const editingRoomId = ref(null);
+const editingRoomName = ref("");
 
 let activeDragElement = null;
 // 保存对话框状态
@@ -361,28 +439,200 @@ const handleDragOver = (event) => {
 const handleDrop = (event) => {
   event.preventDefault();
 
-  if (draggingDevice && canvasRef.value) {
-    const rect = canvasRef.value.getBoundingClientRect();
-    const x = Math.max(0, event.clientX - rect.left - draggingDevice.width / 2);
-    const y = Math.max(0, event.clientY - rect.top - draggingDevice.height / 2);
+  if (!draggingDevice || !canvasRef.value) return;
 
-    // 创建设备实例
-    const deviceInstance = {
-      ...draggingDevice,
-      instanceId: `device-${Date.now()}-${Math.random()
-        .toString(36)
-        .substr(2, 9)}`,
-      x,
-      y,
-      scale: 1,
-    };
-    console.log(deviceInstance, "ppp");
-    canvasDevices.value.push(deviceInstance);
-    ElMessage.success(`已添加 ${draggingDevice.name}`);
+  // 只允许房间类型的设备直接拖到画布上
+  if (draggingDevice.type !== "room") {
+    ElMessage.error("设备只能拖拽到房间内部");
+    dragPreview.show = false;
+    draggingDevice = null;
+    return;
   }
+
+  const rect = canvasRef.value.getBoundingClientRect();
+  const x = Math.max(0, event.clientX - rect.left - draggingDevice.width / 2);
+  const y = Math.max(0, event.clientY - rect.top - draggingDevice.height / 2);
+
+  // 创建房间实例
+  const roomInstance = {
+    ...draggingDevice,
+    instanceId: `room-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    x,
+    y,
+    scale: 1,
+    type: "room",
+  };
+
+  rooms.value.push(roomInstance);
+  ElMessage.success(`已添加 ${draggingDevice.name}`);
 
   dragPreview.show = false;
   draggingDevice = null;
+};
+
+// 房间拖拽经过处理
+const handleRoomDragOver = (event, room) => {
+  event.preventDefault();
+  event.stopPropagation();
+  event.dataTransfer.dropEffect = "copy";
+
+  // 只允许非房间设备拖入房间
+  if (draggingDevice && draggingDevice.type !== "room") {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const parentRect = canvasRef.value.getBoundingClientRect();
+
+    dragPreview.show = true;
+    dragPreview.x = event.clientX - parentRect.left - draggingDevice.width / 2;
+    dragPreview.y = event.clientY - parentRect.top - draggingDevice.height / 2;
+    dragPreview.width = draggingDevice.width;
+    dragPreview.height = draggingDevice.height;
+    dragPreview.icon = draggingDevice.icon;
+  }
+};
+
+// 房间内设备放置
+const handleRoomDrop = (event, room) => {
+  event.preventDefault();
+  event.stopPropagation();
+
+  if (!draggingDevice || draggingDevice.type === "room") {
+    ElMessage.error("房间不能拖入其他房间内");
+    return;
+  }
+
+  const rect = event.currentTarget.getBoundingClientRect();
+  const parentRect = canvasRef.value.getBoundingClientRect();
+
+  // 计算相对于房间的位置
+  const relativeX = Math.max(
+    0,
+    Math.min(
+      room.width - draggingDevice.width,
+      event.clientX - rect.left - draggingDevice.width / 2
+    )
+  );
+  const relativeY = Math.max(
+    0,
+    Math.min(
+      room.height - draggingDevice.height - 40, // 减去房间头部高度
+      event.clientY - rect.top - draggingDevice.height / 2 - 40
+    )
+  );
+
+  // 创建设备实例
+  const deviceInstance = {
+    ...draggingDevice,
+    instanceId: `device-${Date.now()}-${Math.random()
+      .toString(36)
+      .substr(2, 9)}`,
+    roomId: room.instanceId,
+    x: relativeX,
+    y: relativeY,
+    scale: 1,
+    type: "device",
+  };
+
+  devices.value.push(deviceInstance);
+  ElMessage.success(`已添加 ${draggingDevice.name} 到 ${room.name}`);
+
+  dragPreview.show = false;
+  draggingDevice = null;
+};
+
+// 房间内设备移动开始
+const handleInnerDeviceMouseDown = (event, device, room) => {
+  if (
+    event.target.closest(".resize-handle") ||
+    event.target.closest(".action-trigger")
+  ) {
+    return;
+  }
+
+  // 阻止事件冒泡，防止触发房间移动
+  event.stopPropagation();
+  event.preventDefault();
+
+  isDraggingDevice = true;
+  selectedDeviceId.value = device.instanceId;
+
+  const roomElement = event.currentTarget.closest('.room-device');
+  
+  // 计算相对于事件触发设备的位置偏移
+  const deviceRect = event.currentTarget.getBoundingClientRect();
+  dragOffset.x = event.clientX - deviceRect.left;
+  dragOffset.y = event.clientY - deviceRect.top;
+
+  const handleMouseMove = (e) => {
+    if (!isDraggingDevice) return;
+
+    const roomRect = roomElement.getBoundingClientRect();
+    const roomInnerRect = {
+      width: room.width,
+      height: room.height - 40 // 减去房间头部高度
+    };
+
+    // 计算相对于房间内部的新位置
+    const relativeX = e.clientX - roomRect.left - dragOffset.x;
+    const relativeY = e.clientY - roomRect.top - 40 - dragOffset.y; // 减去房间头部高度
+
+    // 限制在房间内部
+    const newX = Math.max(
+      0,
+      Math.min(roomInnerRect.width - device.width, relativeX)
+    );
+    const newY = Math.max(
+      0,
+      Math.min(roomInnerRect.height - device.height, relativeY)
+    );
+
+    device.x = newX;
+    device.y = newY;
+  };
+
+  const handleMouseUp = () => {
+    isDraggingDevice = false;
+    document.removeEventListener("mousemove", handleMouseMove);
+    document.removeEventListener("mouseup", handleMouseUp);
+  };
+
+  document.addEventListener("mousemove", handleMouseMove);
+  document.addEventListener("mouseup", handleMouseUp);
+};
+
+// 房间内设备缩放开始
+const handleInnerDeviceResizeStart = (event, device, room) => {
+  // 阻止事件冒泡，防止触发房间移动
+  event.stopPropagation();
+  event.preventDefault();
+  
+  isResizing = true;
+  const startX = event.clientX;
+  const startY = event.clientY;
+  const startWidth = device.width;
+  const startHeight = device.height;
+
+  const handleMouseMove = (e) => {
+    if (!isResizing) return;
+
+    const deltaX = e.clientX - startX;
+    const deltaY = e.clientY - startY;
+
+    // 限制最大尺寸不超过房间
+    const maxWidth = room.width - device.x;
+    const maxHeight = room.height - device.y - 40; // 减去房间头部高度
+
+    device.width = Math.max(30, Math.min(maxWidth, startWidth + deltaX));
+    device.height = Math.max(30, Math.min(maxHeight, startHeight + deltaY));
+  };
+
+  const handleMouseUp = () => {
+    isResizing = false;
+    document.removeEventListener("mousemove", handleMouseMove);
+    document.removeEventListener("mouseup", handleMouseUp);
+  };
+
+  document.addEventListener("mousemove", handleMouseMove);
+  document.addEventListener("mouseup", handleMouseUp);
 };
 
 // 点击画布
@@ -497,22 +747,92 @@ const handleRepair = (device) => {
   showActionMenu.value = false;
 };
 
+// 获取房间内的设备
+const getRoomDevices = (roomId) => {
+  return devices.value.filter((device) => device.roomId === roomId);
+};
+
+// 删除房间（级联删除房间内设备）
+const handleDeleteRoom = (room) => {
+  const roomIndex = rooms.value.findIndex(
+    (r) => r.instanceId === room.instanceId
+  );
+  if (roomIndex > -1) {
+    rooms.value.splice(roomIndex, 1);
+
+    // 删除房间内的所有设备
+    const devicesToDelete = devices.value.filter(
+      (device) => device.roomId === room.instanceId
+    );
+    devicesToDelete.forEach((device) => {
+      const deviceIndex = devices.value.findIndex(
+        (d) => d.instanceId === device.instanceId
+      );
+      if (deviceIndex > -1) {
+        devices.value.splice(deviceIndex, 1);
+      }
+    });
+
+    selectedDeviceId.value = null;
+    showActionMenu.value = false;
+    ElMessage.success(`房间 ${room.name} 及其内部设备已删除`);
+  }
+};
+
 // 删除设备
 const handleDelete = (device) => {
-  const index = canvasDevices.value.findIndex(
+  const index = devices.value.findIndex(
     (d) => d.instanceId === device.instanceId
   );
   if (index > -1) {
-    canvasDevices.value.splice(index, 1);
+    devices.value.splice(index, 1);
     selectedDeviceId.value = null;
     showActionMenu.value = false;
     ElMessage.success("设备已删除");
   }
 };
 
+// 开始编辑房间名称
+const startEditRoomName = (room) => {
+  editingRoomId.value = room.instanceId;
+  editingRoomName.value = room.name;
+  
+  // 使用 nextTick 确保 DOM 更新后聚焦输入框
+  nextTick(() => {
+    if (roomNameInput.value) {
+      roomNameInput.value.focus();
+      roomNameInput.value.select();
+    }
+  });
+};
+
+// 完成编辑房间名称
+const finishEditRoomName = (room) => {
+  if (!editingRoomName.value.trim()) {
+    editingRoomName.value = room.name; // 恢复原名称
+    return;
+  }
+  
+  const roomIndex = rooms.value.findIndex(r => r.instanceId === room.instanceId);
+  if (roomIndex > -1) {
+    rooms.value[roomIndex].name = editingRoomName.value.trim();
+    ElMessage.success("房间名称已更新");
+  }
+  
+  editingRoomId.value = null;
+  editingRoomName.value = "";
+};
+
+// 取消编辑房间名称
+const cancelEditRoomName = () => {
+  editingRoomId.value = null;
+  editingRoomName.value = "";
+};
+
 // 清空画布
 const clearCanvas = () => {
-  canvasDevices.value = [];
+  rooms.value = [];
+  devices.value = [];
   selectedDeviceId.value = null;
   ElMessage.success("画布已清空");
 };
@@ -525,7 +845,7 @@ const handleDialogConfirm = () => {
 
 // 保存画布数据
 const saveCanvas = () => {
-  if (canvasDevices.value.length === 0) {
+  if (rooms.value.length === 0 && devices.value.length === 0) {
     ElMessage.warning("画布为空，无需保存");
     return;
   }
@@ -538,9 +858,25 @@ const saveCanvas = () => {
       width: canvasRef.value?.offsetWidth || 0,
       height: canvasRef.value?.offsetHeight || 0,
     },
-    devices: canvasDevices.value.map((device) => ({
+    rooms: rooms.value.map((room) => ({
+      instanceId: room.instanceId,
+      roomId: room.id,
+      name: room.name,
+      icon: room.icon,
+      position: {
+        x: room.x,
+        y: room.y,
+      },
+      size: {
+        width: room.width,
+        height: room.height,
+      },
+      type: "room",
+    })),
+    devices: devices.value.map((device) => ({
       instanceId: device.instanceId,
       deviceId: device.id,
+      roomId: device.roomId,
       name: device.name,
       icon: device.icon,
       position: {
@@ -551,14 +887,13 @@ const saveCanvas = () => {
         width: device.width,
         height: device.height,
       },
-      scale: device.scale || 1,
+      type: "device",
     })),
   };
 
   // 在对话框中显示 JSON
   jsonToSave.value = JSON.stringify(canvasData, null, 2);
   isSaveDialogVisible.value = true;
-  //ElMessage.success("画布数据已生成");
 };
 
 // 复制 JSON 数据
@@ -588,7 +923,10 @@ const loadCanvas = () => {
         const canvasData = JSON.parse(event.target.result);
 
         // 验证数据格式
-        if (!canvasData.devices || !Array.isArray(canvasData.devices)) {
+        if (
+          (!canvasData.rooms || !Array.isArray(canvasData.rooms)) &&
+          (!canvasData.devices || !Array.isArray(canvasData.devices))
+        ) {
           throw new Error("无效的画布数据格式");
         }
 
@@ -597,18 +935,38 @@ const loadCanvas = () => {
           selectedBackground.value = canvasData.background;
         }
 
-        // 恢复设备
-        canvasDevices.value = canvasData.devices.map((savedDevice) => ({
-          ...savedDevice,
-          id: savedDevice.deviceId,
-          x: savedDevice.position.x,
-          y: savedDevice.position.y,
-          width: savedDevice.size.width,
-          height: savedDevice.size.height,
-          scale: savedDevice.scale || 1,
-        }));
+        // 恢复房间和设备
+        if (canvasData.rooms) {
+          rooms.value = canvasData.rooms.map((savedRoom) => ({
+            ...savedRoom,
+            id: savedRoom.roomId,
+            x: savedRoom.position.x,
+            y: savedRoom.position.y,
+            width: savedRoom.size.width,
+            height: savedRoom.size.height,
+            type: "room",
+          }));
+        }
 
-        ElMessage.success(`已加载 ${canvasDevices.value.length} 个设备`);
+        if (canvasData.devices) {
+          devices.value = canvasData.devices.map((savedDevice) => ({
+            ...savedDevice,
+            id: savedDevice.deviceId,
+            x: savedDevice.position.x,
+            y: savedDevice.position.y,
+            width: savedDevice.size.width,
+            height: savedDevice.size.height,
+            type: "device",
+          }));
+        }
+
+        const totalItems =
+          (rooms.value?.length || 0) + (devices.value?.length || 0);
+        ElMessage.success(
+          `已加载 ${rooms.value?.length || 0} 个房间和 ${
+            devices.value?.length || 0
+          } 个设备`
+        );
         console.log("加载的画布数据:", canvasData);
       } catch (error) {
         console.error("加载失败:", error);
@@ -778,7 +1136,142 @@ const loadCanvas = () => {
   font-size: 40px;
 }
 
-/* 画布上的设备 */
+/* 房间样式 */
+.room-device {
+  position: absolute;
+  cursor: move;
+  transition: transform 0.2s;
+  transform-origin: center;
+  background: rgba(64, 158, 255, 0.1);
+  border: 2px solid #409eff;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.room-device.view-mode {
+  cursor: default;
+}
+
+.room-content {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.room-header {
+  height: 40px;
+  background: #409eff;
+  color: white;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  font-weight: 500;
+  font-size: 14px;
+  cursor: text;
+  user-select: none;
+}
+
+.room-header:hover {
+  background: #337ecc;
+}
+
+/* 编辑模式下输入框样式 */
+.room-header .el-input {
+  --el-input-bg-color: transparent;
+  --el-input-border-color: transparent;
+  --el-input-text-color: white;
+  --el-input-focus-border-color: white;
+}
+
+.room-header .el-input__wrapper {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+}
+
+.room-header .el-input__inner {
+  color: white;
+  font-size: 14px;
+  font-weight: 500;
+  background: transparent;
+  border: none;
+  padding: 0;
+  height: auto;
+  line-height: normal;
+}
+
+.room-body {
+  flex: 1;
+  position: relative;
+  background: rgba(255, 255, 255, 0.8);
+}
+
+/* 房间内设备 */
+.inner-device {
+  position: absolute;
+  cursor: move;
+  transition: transform 0.2s;
+  border-radius: 4px;
+}
+
+.inner-device.view-mode {
+  cursor: pointer;
+}
+
+.inner-device.selected {
+  box-shadow: 0 0 0 2px #409eff;
+}
+
+.inner-device .device-content {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid #e4e7ed;
+}
+
+.inner-device .device-icon {
+  font-size: 24px;
+  margin-bottom: 2px;
+}
+
+/* 房间内设备操作触发器 */
+.inner-device .device-action {
+  width: 30px;
+  height: 30px;
+  font-size: 12px;
+}
+
+/* 房间内设备选中边框 */
+.inner-device.selected .selection-border {
+  position: absolute;
+  top: -4px;
+  left: -4px;
+  right: -4px;
+  bottom: -4px;
+  border: 2px solid #409eff;
+  border-radius: 6px;
+  pointer-events: none;
+  animation: border-blink 1s ease-in-out infinite;
+}
+
+@keyframes border-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* 画布上的设备（保留原有样式） */
 .canvas-device {
   position: absolute;
   cursor: move;
@@ -790,7 +1283,7 @@ const loadCanvas = () => {
   cursor: default;
 }
 
-.device-content {
+.canvas-device .device-content {
   width: 100%;
   height: 100%;
   border-radius: 8px;
@@ -837,10 +1330,10 @@ const loadCanvas = () => {
 /* 操作触发器 */
 .action-trigger {
   position: absolute;
-  top: -12px;
-  right: -12px;
-  width: 28px;
-  height: 28px;
+  top: 0;
+  right: 0;
+  width: 42px;
+  height: 40px;
   background: #409eff;
   border-radius: 50%;
   display: flex;
@@ -913,8 +1406,8 @@ const loadCanvas = () => {
 }
 
 .resize-handle.bottom-right {
-  right: -6px;
-  bottom: -6px;
+    right: -4px;
+    bottom: -4px;
 }
 
 .resize-handle:hover {

@@ -15,7 +15,8 @@
     "vue": "^3.4.21",
     "vue-echarts": "^8.0.1",
     "vue-router": "^4.6.3",
-    "vue-tianditu": "^2.7.6"
+    "vue-tianditu": "^2.7.6",
+    "vuedraggable": "^4.1.0"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.0.4",
