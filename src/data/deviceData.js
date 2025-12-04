@@ -7,7 +7,7 @@ export const deviceCategories = [
     devices: [
       {
         id: "room-1",
-        name: "房间",
+        name: "操作间",
         icon: "⬜️",
         width: 200,
         height: 200,
