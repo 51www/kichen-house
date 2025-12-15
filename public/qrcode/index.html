@@ -1,1 +1,620 @@
-1
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>二维码识别与同步</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      --primary: #3b82f6;
+      --surface: rgba(255, 255, 255, 0.8);
+      --dark-text: #0f172a;
+      --border: rgba(15, 23, 42, 0.1);
+      --success: #22c55e;
+      --warning: #f97316;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: radial-gradient(circle at top, #eef2ff 0%, #e2e8f0 45%, #cbd5f5 100%);
+      color: var(--dark-text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    main {
+      width: min(960px, 100%);
+      background: var(--surface);
+      border-radius: 24px;
+      box-shadow: 0 25px 60px rgba(15, 23, 42, 0.15);
+      backdrop-filter: blur(16px);
+      padding: 32px;
+      display: grid;
+      gap: 24px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(1.75rem, 2.5vw, 2.5rem);
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+    p.lead {
+      margin: 4px 0 0;
+      color: rgba(15, 23, 42, 0.7);
+      font-size: 1rem;
+    }
+
+    .panels {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 24px;
+    }
+
+    .card {
+      background: white;
+      border-radius: 18px;
+      border: 1px solid var(--border);
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .video-shell {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 3 / 4;
+      border-radius: 16px;
+      overflow: hidden;
+      background: #0f172a;
+      border: 1px solid rgba(15, 23, 42, 0.15);
+    }
+
+    video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .video-overlay {
+      position: absolute;
+      inset: 0;
+      border: 2px dashed rgba(255, 255, 255, 0.6);
+      border-radius: 16px;
+      pointer-events: none;
+    }
+
+    button.primary {
+      border: none;
+      border-radius: 999px;
+      padding: 12px 22px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      background: linear-gradient(135deg, #2563eb, #7c3aed);
+      color: white;
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    button.primary:active {
+      transform: scale(0.97);
+    }
+
+    .result-box {
+      min-height: 120px;
+      border-radius: 16px;
+      border: 1px dashed rgba(15, 23, 42, 0.2);
+      padding: 18px;
+      background: rgba(59, 130, 246, 0.05);
+      word-break: break-all;
+      font-size: 1.05rem;
+      line-height: 1.5;
+      transition: border-color 0.2s ease, background 0.2s ease;
+    }
+
+    .result-box[data-state='filled'] {
+      border-color: rgba(34, 197, 94, 0.5);
+      background: rgba(34, 197, 94, 0.08);
+    }
+
+    .result-box.remote-update {
+      animation: pulse-glow 0.7s ease;
+    }
+
+    @keyframes pulse-glow {
+      0% {
+        box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.45);
+      }
+      100% {
+        box-shadow: 0 0 0 18px rgba(59, 130, 246, 0);
+      }
+    }
+
+    .actions {
+
+
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    button.secondary {
+      border: 1px solid rgba(15, 23, 42, 0.2);
+      border-radius: 14px;
+      padding: 10px 18px;
+      background: white;
+      color: var(--dark-text);
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    button.secondary:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    button.secondary.copied {
+      background: linear-gradient(135deg, #22c55e, #16a34a);
+      color: #fff;
+      border-color: transparent;
+      box-shadow: 0 10px 20px rgba(34, 197, 94, 0.35);
+    }
+
+    .status {
+
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.95rem;
+      color: rgba(15, 23, 42, 0.7);
+    }
+
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--warning);
+    }
+
+    footer {
+      font-size: 0.9rem;
+      color: rgba(15, 23, 42, 0.6);
+      text-align: center;
+    }
+
+    @media (max-width: 640px) {
+      body {
+        padding: 16px;
+      }
+
+      main {
+        padding: 20px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>二维码即时识别</h1>
+      <p class="lead">在手机或电脑端识别二维码，实时同步到所有打开的页面。</p>
+    </header>
+
+    <section class="panels">
+      <article class="card">
+        <h2>扫码识别</h2>
+        <div class="video-shell">
+          <video id="preview" muted playsinline></video>
+          <span class="video-overlay"></span>
+        </div>
+        <button id="scanButton" class="primary" disabled>加载中...</button>
+        <div class="status">
+          <span class="status-dot" id="cameraStatus"></span>
+          <span id="cameraStatusText">摄像头待命</span>
+        </div>
+      </article>
+
+      <article class="card">
+        <h2>识别结果</h2>
+        <div id="resultBox" class="result-box">暂未识别内容</div>
+        <div class="actions">
+          <button id="copyButton" class="secondary" disabled>复制结果</button>
+        </div>
+        <div class="status">
+          <span class="status-dot" id="syncStatusDot"></span>
+          <span id="syncStatusText">同步连接初始化中</span>
+        </div>
+      </article>
+    </section>
+
+    <footer>请确保授予摄像头权限，并保持网络畅通以获得最佳体验。</footer>
+  </main>
+
+  <script>
+    // 动态加载脚本，支持多CDN备用自动重试
+    function loadScript(urls, name) {
+      return new Promise((resolve, reject) => {
+        let index = 0;
+        
+        function tryLoad() {
+          if (index >= urls.length) {
+            reject(new Error(`${name} 所有CDN源均加载失败`));
+            return;
+          }
+          
+          const script = document.createElement('script');
+          script.src = urls[index];
+          script.onload = () => {
+            console.log(`${name} 从 ${urls[index]} 加载成功`);
+            resolve();
+          };
+          script.onerror = () => {
+            console.warn(`${name} 从 ${urls[index]} 加载失败，尝试备用源...`);
+            index++;
+            tryLoad();
+          };
+          document.head.appendChild(script);
+        }
+        
+        tryLoad();
+      });
+    }
+
+    // ZXing 多个备用CDN源
+    const zxingCDNs = [
+      'zxing.min.js',
+    ];
+
+    // PubNub 多个备用CDN源
+    const pubnubCDNs = [
+      'pubnub.min.js', 
+    ];
+
+    // 并行加载两个库
+    Promise.all([
+      loadScript(zxingCDNs, 'ZXing'),
+      loadScript(pubnubCDNs, 'PubNub')
+    ]).then(() => {
+      console.log('✅ 所有依赖库加载成功，初始化应用...');
+      initApp();
+    }).catch(err => {
+      console.error('❌ 依赖库加载失败:', err);
+      alert('依赖库加载失败，请检查网络连接后刷新页面\n\n' + err.message);
+    });
+
+    function initApp() {
+    (function () {
+      const scanButton = document.getElementById('scanButton');
+      const copyButton = document.getElementById('copyButton');
+      const cameraStatusDot = document.getElementById('cameraStatus');
+      const cameraStatusText = document.getElementById('cameraStatusText');
+      const syncStatusDot = document.getElementById('syncStatusDot');
+      const syncStatusText = document.getElementById('syncStatusText');
+      const resultBox = document.getElementById('resultBox');
+
+      const statusColorMap = {
+        idle: 'var(--warning)',
+        pending: '#facc15',
+        scanning: 'var(--primary)',
+        success: 'var(--success)',
+        error: '#ef4444'
+      };
+
+      const syncColorMap = {
+        connecting: '#facc15',
+        online: 'var(--success)',
+        error: '#ef4444',
+        update: '#38bdf8'
+      };
+
+      const CHANNEL_NAME = 'sc-business-qrcode-sync-channel';
+      
+      // 调试：检查 ZXing 加载情况
+      console.log('🔍 检查 window 上的 ZXing 相关对象:');
+      console.log('window.ZXingBrowser:', window.ZXingBrowser);
+      console.log('window.ZXing:', window.ZXing);
+      console.log('window 上所有包含 ZXing 的属性:', Object.keys(window).filter(k => k.includes('ZXing')));
+      
+      // 尝试多种可能的导出名称
+      const ZXing = window.ZXingBrowser || window.ZXing || window;
+
+      if (!ZXing.BrowserQRCodeReader) {
+        scanButton.disabled = true;
+        const msg = 'ZXing 库加载失败，请刷新页面';
+        setCameraStatus('error', msg);
+        console.error('❌ ZXing.BrowserQRCodeReader 不存在');
+        console.error('可用的对象:', ZXing);
+        alert(msg + '\n\n请查看控制台了解详情');
+        return;
+      }
+      
+      console.log('✅ ZXing 库已就绪');
+      scanButton.disabled = false;
+      scanButton.textContent = '开始识别';
+
+      const codeReader = new ZXing.BrowserQRCodeReader();
+      let activeControls = null;
+      let isScanning = false;
+      let lastResult = '';
+      let copyResetTimer = null;
+      const pubnubClient = initRealtimeSync();
+
+      scanButton.addEventListener('click', () => {
+        console.log('🔘 开始识别按钮被点击');
+        if (isScanning) {
+          stopScanning(true);
+          return;
+        }
+        startScanning();
+      });
+
+      copyButton.addEventListener('click', handleCopyResult);
+
+      function setCameraStatus(state, text) {
+        cameraStatusDot.style.background = statusColorMap[state] || statusColorMap.idle;
+        cameraStatusText.textContent = text;
+      }
+
+      function setSyncStatus(state, text) {
+        syncStatusDot.style.background = syncColorMap[state] || syncColorMap.connecting;
+        syncStatusText.textContent = text;
+      }
+
+      async function startScanning() {
+        console.log('📷 开始扫描流程');
+        
+        // if (!navigator.mediaDevices) {
+        //   const msg = '当前环境不支持摄像头调用\n\n请使用 HTTPS 或 localhost 访问';
+        //   setCameraStatus('error', msg);
+        //   alert(msg);
+        //   console.error('❌ navigator.mediaDevices 不可用');
+        //   return;
+        // }
+
+        setCameraStatus('pending', '正在请求摄像头权限');
+        scanButton.textContent = '停止识别';
+        isScanning = true;
+
+        try {
+          console.log('🔍 正在列举摄像头设备...');
+          
+          // 使用实例方法而非静态方法
+          let devices;
+          if (typeof codeReader.listVideoInputDevices === 'function') {
+            devices = await codeReader.listVideoInputDevices();
+          } else if (typeof ZXing.BrowserQRCodeReader.listVideoInputDevices === 'function') {
+            devices = await ZXing.BrowserQRCodeReader.listVideoInputDevices();
+          } else {
+            // 如果都不行，直接调用浏览器 API
+            const mediaDevices = await navigator.mediaDevices.enumerateDevices();
+            devices = mediaDevices.filter(device => device.kind === 'videoinput');
+          }
+          
+          console.log('📹 找到设备:', devices);
+          
+          if (!devices || !devices.length) {
+            throw new Error('未检测到可用摄像头');
+          }
+          const selectedDeviceId = chooseBestCamera(devices);
+          console.log('✅ 选中设备ID:', selectedDeviceId);
+          
+          codeReader.decodeFromVideoDevice(selectedDeviceId, 'preview', (result, error, controls) => {
+            if (controls && !activeControls) {
+              activeControls = controls;
+              console.log('🎬 摄像头流已启动');
+            }
+
+            if (result) {
+              console.log('🎯 识别到二维码:', result.getText());
+              handleDecodedText(result.getText());
+            }
+
+            if (error && !(error instanceof ZXing.NotFoundException)) {
+              console.error('⚠️ 识别错误:', error);
+              setCameraStatus('error', error.message || '识别过程中出现问题');
+            }
+          });
+          setCameraStatus('scanning', '摄像头已启动，请把二维码放入取景框');
+        } catch (error) {
+          console.error('❌ 摄像头初始化失败:', error);
+          const msg = error.message || '摄像头初始化失败';
+          setCameraStatus('error', msg);
+          alert('摄像头错误:\n' + msg + '\n\n请检查:\n1. 是否授予摄像头权限\n2. 是否使用 HTTPS 访问\n3. 摄像头是否被其他应用占用');
+          stopScanning(true);
+        }
+      }
+
+      function stopScanning(manual = false) {
+        if (activeControls) {
+          activeControls.stop();
+          activeControls = null;
+        }
+        isScanning = false;
+        scanButton.textContent = '开始识别';
+        if (manual) {
+          setCameraStatus('idle', '摄像头待命');
+        }
+      }
+
+      function handleDecodedText(text) {
+        if (!text || text === lastResult) {
+          return;
+        }
+        updateResultDisplay(text, true);
+        setCameraStatus('success', '识别成功，如需继续请再次点击');
+        stopScanning();
+      }
+
+      function updateResultDisplay(text, shouldBroadcast = false, source = 'local') {
+        if (!text) {
+          lastResult = '';
+          resultBox.textContent = '暂未识别内容';
+          resultBox.dataset.state = 'empty';
+          copyButton.disabled = true;
+          return;
+        }
+        lastResult = text;
+        resultBox.textContent = text;
+        resultBox.dataset.state = 'filled';
+        copyButton.disabled = false;
+
+        if (shouldBroadcast) {
+          publishResult(text);
+        }
+
+        if (source === 'remote') {
+          resultBox.classList.add('remote-update');
+          setTimeout(() => resultBox.classList.remove('remote-update'), 700);
+        }
+      }
+
+      function chooseBestCamera(devices) {
+        // 兼容不同的设备对象格式
+        const backFacing = devices.find((device) => {
+          const label = device.label || '';
+          const deviceId = device.deviceId || device.id || '';
+          return /back|rear|environment|后置/i.test(label) || /back|rear/i.test(deviceId);
+        });
+        return (backFacing || devices[0]).deviceId || (backFacing || devices[0]).id;
+      }
+
+      function handleCopyResult() {
+        if (!lastResult) {
+          return;
+        }
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(lastResult).then(
+            () => showCopyFeedback('已复制'),
+            () => fallbackCopy()
+          );
+        } else {
+          fallbackCopy();
+        }
+      }
+
+      function fallbackCopy() {
+        if (!lastResult) {
+          return;
+        }
+        const textarea = document.createElement('textarea');
+        textarea.value = lastResult;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        let success = false;
+        try {
+          success = document.execCommand('copy');
+        } catch (error) {
+          success = false;
+        }
+        document.body.removeChild(textarea);
+        showCopyFeedback(success ? '已复制' : '复制失败');
+      }
+
+      function showCopyFeedback(message) {
+        const originalLabel = copyButton.dataset.originalLabel || copyButton.textContent;
+        if (!copyButton.dataset.originalLabel) {
+          copyButton.dataset.originalLabel = originalLabel;
+        }
+        copyButton.textContent = message;
+        copyButton.classList.add('copied');
+        clearTimeout(copyResetTimer);
+        copyResetTimer = setTimeout(() => {
+          copyButton.textContent = copyButton.dataset.originalLabel;
+          copyButton.classList.remove('copied');
+          copyResetTimer = null;
+        }, 1500);
+      }
+
+      function initRealtimeSync() {
+        if (!window.PubNub) {
+          setSyncStatus('error', 'PubNub SDK 加载失败，无法实时同步');
+          return null;
+        }
+        setSyncStatus('connecting', '正在建立同步连接');
+        const client = new PubNub({
+          publishKey: 'demo',
+          subscribeKey: 'demo',
+          uuid: `qrcode-${Date.now()}-${Math.floor(Math.random() * 10000)}`
+        });
+
+        client.addListener({
+          status(event) {
+            if (event.category === 'PNConnectedCategory' || event.category === 'PNNetworkUpCategory') {
+              setSyncStatus('online', '同步已连接');
+            }
+            if (event.category === 'PNNetworkDownCategory' || event.category === 'PNTimeoutCategory') {
+              setSyncStatus('error', '同步中断，正在自动重试');
+            }
+          },
+          message(event) {
+            const payload = event.message || {};
+            if (!payload.text || payload.sender === client.getUUID()) {
+              return;
+            }
+            updateResultDisplay(payload.text, false, 'remote');
+            flashSyncUpdate();
+          }
+        });
+
+        client.subscribe({ channels: [CHANNEL_NAME] });
+        return client;
+      }
+
+      function publishResult(text) {
+        if (!pubnubClient) {
+          return;
+        }
+        pubnubClient.publish(
+          {
+            channel: CHANNEL_NAME,
+            message: {
+              text,
+              sender: pubnubClient.getUUID(),
+              timestamp: Date.now()
+            }
+          },
+          (status) => {
+            if (status.error) {
+              console.error(status.errorData || status);
+              setSyncStatus('error', '同步失败，稍后自动重试');
+            } else {
+              setSyncStatus('online', '结果已同步到其他端');
+            }
+          }
+        );
+      }
+
+      function flashSyncUpdate() {
+        syncStatusDot.style.background = syncColorMap.update;
+        syncStatusText.textContent = '收到来自另一端的结果';
+        setTimeout(() => setSyncStatus('online', '同步已连接'), 2000);
+      }
+
+      setCameraStatus('idle', '摄像头待命');
+      updateResultDisplay('');
+    })();
+    }
+  </script>
+</body>
+</html>
+
+
